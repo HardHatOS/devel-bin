@@ -1,0 +1,141 @@
+#!/usr/bin/env python
+from pathlib import Path
+from re import compile,search
+from sys import argv
+
+#############
+### USAGE ###
+#############
+def usage():
+    name = Path(argv[0]).name
+    print(f"NAME\n\t{name} - python script that replaces the default interfaces with their Hard Hat OS equivalents for the specified SELinux /path/to/filename.te\n")
+    print(f"SYNOPSIS\n\t{name} /path/to/hos.if /path/to/filename.te [OPTIONS]\n")
+    print(f"DESCRIPTION\n\t{name} is a Python script provided by the Hard Hat OS (HOS) project that replaces the default SELinux interfaces with their HOS equivalents to ensure no unnecessary permissions are granted. By default, the new contents of the /path/to/filename.te (argument 2) that contain the HOS replacements will be shown to stdout. Argument 3 can optionally be used to specify an output file, see the OPTIONS section below.\n")
+    print(f"OPTIONS\n\t/path/to/outfile.te\tThe output file to write the new contents of /path/to/filename.te specified in argument 2\n")
+    print(f"EXAMPLE\n\t1. {name} /usr/local/src/devel-selinux-interfaces/hos-dev.if ~/cat.te\n\n\t2. {name} ~/git/devel-selinux-interfaces/hos-manage.if ~/cat.te /tmp/cat.new.te\n\n\t3. {name} /home/user/devel-selinux-interfaces/hos-auth.if ./cat.te ./cat.te\n")
+    print("\n")
+
+#################
+### FUNCTIONS ###
+#################
+def args():
+    # Check if the user has specified the help flag (any argument)
+    if any([True for arg in argv if arg == '-h']):
+        # If so, then display the usage information
+        usage()
+        # Exit
+        exit(0)
+    try:
+        # Argument 1: Hard Hat OS interface file
+        hos_if = Path(argv[1]).resolve()
+    except IndexError:
+        # Show the usage information
+        usage()
+        # If the argument was not specified, then display an error message to stdout
+        print('ERROR: Argument 1: Specify the path to the Hard Hat OS interface file.')
+        # Exit with an error
+        exit(1)
+    try:
+        # Argument 2: SELinux .te file whose default interfaces will be replaced with those within the Hard Hat OS interface file
+        te = Path(argv[2]).resolve()
+    except IndexError:
+        # Show the usage information
+        usage()
+        # If argument 2 was not specified, then display an error message to stdout
+        print('ERROR: Argument 2: Specify the SELinux filename.te file whose default interfaces will be replaced with Hard Hat OS ones.')
+        # Exit with an error
+        exit(1)
+    try:
+        # Argument 3 (OPTIONAL): New SELinux .te file to write once the default interfaces are replaced
+        outfile = Path(argv[3]).resolve()
+    except IndexError:
+        outfile = False
+    # Return the files
+    return(hos_if, te, outfile)
+
+def is_file(filename):
+    # Check if $filename is a valid file, and if so, then return True
+    if Path(filename).is_file(): return(True)
+    # Otherwise, display an error message to stdout
+    print(f"ERROR: Invalid file: '{filename}'")
+    # Exit with an error
+    exit(1)
+
+def hos_interfaces(hos_if):
+    # Open the Hard Hat OS interface file and obtain its full contents
+    with open(hos_if, 'r') as f: contents = f.readlines()
+    # Only keep the lines that define the interface names
+    contents = [line.strip() for line in contents if line.strip().startswith('interface(`')]
+    # Define the output set containing all Hard Hat OS interface names
+    interfaces = set()
+    # Define the regular expression that will be used to only obtain the name of each interface
+    exp = compile('hos_[\w]+')
+    # Iterate through each entry within the $contents list
+    for entry in contents:
+        try:
+            # Obtain the Hard Hat OS interface name
+            name = search(exp, entry).group()
+        except AttributeError:
+            # If the regular expression $exp did not match anything for the current $entry, then display the $entry to stdout
+            print(f"WARN: The regular expression '{exp}' did not match anything in the current entry: '{entry}'")
+            # Continue to the next $entry within $contents
+            continue
+        # If the $name was defined, then add it to the output $interfaces set. Here, we remove the prefix so $interfaces will be a list of normal interfaces. This makes it easier to search later on
+        interfaces.add(name.replace('hos_', '').strip())
+    # Return the set of all Hard Hat OS interface names
+    return(interfaces)
+
+def replace_defaults(te, interfaces):
+    # Obtain the full contents of the $te file
+    with open(te, 'r') as f: contents = f.readlines()
+    # Define the new $contents list
+    new_contents = []
+    # Iterate through each $line in the $contents list
+    for line in contents:
+        # Define $curr as the current line minus any extraneous whitespace
+        curr = line.strip()
+        # If $curr starts with one of the interfaces within the $interfaces set, then replace the default interface with the custom Hard Hat OS one
+        replacement = [line.replace(inter, f"hos_{inter}") for inter in interfaces if curr.startswith(f"{inter}(")]
+        # Check if $replacement is empty
+        if not replacement:
+            # If so, then the current $line is added to the $new_contents list
+            new_contents.append(line)
+            # Continue to the next $line
+            continue
+        # Add the $replacement list (which should contain only the line that was replaced) to the $new_contents list.
+        new_contents = new_contents + replacement
+    # Return the $new_contents list, which will contain the replaced interfaces
+    return(new_contents)
+
+def write_contents(outfile, new_contents):
+    # Open the $outfile and write the $new_contents to it
+    with open(outfile, 'w') as f: [f.write(line) for line in new_contents]
+
+############
+### MAIN ###
+############
+def main(hos_if, te, outfile):
+    # Verify the Hard Hat OS interface file is valid
+    is_file(hos_if)
+    # Verify the SELinux policy file is valid
+    is_file(te)
+    # Obtain a set of all interface names defined within the $hos_if file
+    interfaces = hos_interfaces(hos_if)
+    # Replace all of the default interfaces within $te with their Hard Hat OS replacements whenever possible 
+    new_contents = replace_defaults(te, interfaces)
+    # Check if an $outfile has been specified
+    if outfile:
+        # If so, then write the $new_contents to the $outfile
+        write_contents(outfile, new_contents)
+    else:
+        # Otherwise, display the $new_contents to stdout 
+        print(''.join(new_contents))
+
+#############
+### START ###
+#############
+if __name__ == '__main__':
+    # Obtain user-defined arguments
+    [hos_if, te, outfile] = args()
+    # Start the main function
+    main(hos_if, te, outfile)
