@@ -1,0 +1,150 @@
+#!/usr/bin/env python
+from pathlib import Path
+from re import compile,search
+from sys import argv
+
+#############
+### USAGE ###
+#############
+def usage():
+    name = Path(argv[0]).name
+    print(f"NAME\n\t{name} - python script that displays the specified interface or definition within the given SELinux policy directory\n")
+    print(f"SYNOPSIS\n\t{name} /path/to/selinux-policy search_query\n")
+    print(f"DESCRIPTION\n\t{name} is a Python script provided by the Hard Hat OS (HOS) project that searches the files within the given SELinux policy directory, obtained from the Fedora GitHub repository, for the specified interface name or definition. If found, the entire interface or definition is shown to stdout.\n")
+    print(f"EXAMPLE\n\t1. {name} ~/selinux-policies files_config_all_files\n\n\t2. {name} ~/git/selinux-policies rw_file_pattern\n")
+    print("\n")
+
+#################
+### FUNCTIONS ###
+#################
+def args():
+    # Check if the user has specified the help flag (any argument)
+    if any([True for arg in argv if arg == '-h']):
+        # If so, then display the usage information
+        usage()
+        # Exit
+        exit(0)
+    try:
+        # Argument 1: Full path to the selinux-policy directory obtained from Fedora's GitHub repository
+        directory = Path(argv[1]).resolve()
+    except IndexError:
+        # If argument 1 was not passed, display an error message to stdout
+        print('ERROR: Argument 1: Directory that contains all of the sub-directories of SELinux polices to search.')
+        # Exit with an error
+        exit(1)
+    try:
+        # Argument 2: Interface name or domain name to query
+        query = argv[2]
+    except IndexError:
+        # If argument 2 was not passed, display an error message to stdout
+        print('ERROR: Argument 2: Pass the interface or domain name query.')
+        # Exit with an error
+        exit(2)
+    return(directory, query)
+
+def is_dir(directory):
+    # If $directory is a valid directory, then return bool True
+    if Path(directory).is_dir(): return(True)
+    # If the $directory does not exist, then display an error message to stdout
+    print(f"ERROR: Unable to locate directory: '{directory}'")
+    # Exit with an error
+    exit(1)
+
+class files:
+    def __init__(self, directory):
+        # Define a list of all interface files
+        interfaces = self.path_glob(directory, '.if')
+        # Define a list of all support files
+        support_files = self.path_glob(directory, '.spt')
+        # Join the $interfaces and $support_files lists
+        self.filenames = interfaces + support_files
+
+    def __call__(self):
+        # Return the list of all interface and support files in $directory
+        return(self.filenames)
+
+    def path_glob(self, directory, extension):
+        # Find all files within $directory that have the specified file $extension
+        filenames = Path(directory).glob(f"**/*{extension}")
+        try:
+            # Convert $filenames into a list
+            filenames = list(filenames)
+        except TypeError:
+            # If no files with $extension were found, then display an error message to stdout
+            print(f"ERROR: No <filename>{extension} files found in any sub-directories within '{directory}'")
+            # Exit with an error
+            exit(1)
+        # Return the list of filenames that end with $extension
+        return(filenames)
+
+def grep(query, interfaces):
+    # Define the regular expression that will find the definition or interface for the $query
+    query = compile(f"(define|interface)\(`{query}'")
+    # Iterate through each file within the $interfaces list
+    for filename in interfaces:
+        # Obtain the current $filename and obtain its contents
+        with open(filename, 'r') as f: contents = f.readlines()
+        # Iterate through each line witin $contents. This is done via `range` so the line number that contains the $query can be obtained
+        for i in range(len(contents)):
+            # Define the current line, and remove extraneous whitespaces
+            line = contents[i].strip()
+            # Perform the search of $query in the current $line
+            m = search(query, line.strip())
+            try:
+                # Attempt to obtain the match if it was found
+                m = m.group()
+            except AttributeError:
+                # If the $query was not found in the current $line, then continue to the next line
+                continue
+            # If the $query was found, then return the file it was found in and the line number ($i)
+            return(filename, i)
+    return(False, False)
+
+def show(filename, line):
+    # Open $filename and obtain its full contents
+    with open(filename, 'r') as f: contents = f.readlines()
+    # Define the $contents as starting with the $line
+    contents = contents[line:]
+    # If the user's query is a definition AND the definition does _not_ end with a tick, then only show the definition line
+    if (not contents[0].strip().endswith('`')):
+        # Display the definition
+        print(contents[0])
+        # Return here since there's nothing left to do
+        return
+    # Iterate through each line within $contents
+    for i in range(len(contents)):
+        # Once the ending parenthesis is found, then break the loop
+        if contents[i] == "')\n": break
+    # Define the entire interface, including the ending parenthesis
+    interface = contents[:(i + 1)]
+    # Display the full interface to stdout
+    print(''.join(interface))
+
+
+############
+### MAIN ###
+############
+def main(directory, query):
+    # Ensure $directory is a valid directory
+    is_dir(directory)
+    # Obtain a list of all interface and support files within $directory (ends with '.if' and '.spt')
+    filenames = files(directory)()
+    # Obtain the filename of the file that contains the $query and the line number it was found on
+    [filename, line] = grep(query, filenames)
+    # Check if no matches were found
+    if (filename is False) and (line is False):
+        # Display an error message
+        print(f"ERROR: Unable to find query: '{query}'")
+        # Exit with an error
+        exit(1)
+    # Otherwise, display the full definition or interface to stdout
+    show(filename, line)
+    
+#############
+### START ###
+#############
+if __name__ == '__main__':
+    # Obtain the selinux policy directory and the search term query from the user
+    [directory, query] = args()
+    # Start the main function
+    main(directory, query)
