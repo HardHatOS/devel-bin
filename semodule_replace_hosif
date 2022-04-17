@@ -85,28 +85,114 @@ def hos_interfaces(hos_if):
     # Return the set of all Hard Hat OS interface names
     return(interfaces)
 
-def replace_defaults(te, interfaces):
-    # Obtain the full contents of the $te file
-    with open(te, 'r') as f: contents = f.readlines()
-    # Define the new $contents list
-    new_contents = []
-    # Iterate through each $line in the $contents list
-    for line in contents:
-        # Define $curr as the current line minus any extraneous whitespace
-        curr = line.strip()
-        # If $curr starts with one of the interfaces within the $interfaces set, then replace the default interface with the custom Hard Hat OS one
-        replacement = [line.replace(inter, f"hos_{inter}") for inter in interfaces if curr.startswith(f"{inter}(")]
-        # Check if $replacement is empty
-        if not replacement:
-            # If so, then the current $line is added to the $new_contents list
-            new_contents.append(line)
-            # Continue to the next $line
-            continue
-        # Add the $replacement list (which should contain only the line that was replaced) to the $new_contents list.
-        new_contents = new_contents + replacement
-    # Return the $new_contents list, which will contain the replaced interfaces
-    return(new_contents)
+def leading_whitespace(line):
+    try:
+        # Define all leading whitespace for $line
+        ws = search(r'^[\s]+', line).group()
+    except AttributeError:
+        # If there is no whitespace at the beginning of the $line then use nothing
+        ws = ''
+    # Return $ws
+    return(ws)
 
+class replacement:
+    def __init__(self, te, interfaces):
+        # Obtain the full contents of the $te file
+        with open(te, 'r') as f: contents = f.readlines()
+        # Replace the existing interfaces with HOS ones
+        contents = self.default_interface(contents, interfaces)
+        # Replace permissions like 'chr_file_perms' for example with their corresponding HOS interfaces. This is a simple change for lines that are in the format of: 'allow something self:fifo_file fifo_file_perms;'
+        contents = self.permissions_simple(contents, interfaces)
+        # Another function to replace the permissions but this one handles permissions within curly braces
+        contents = self.permissions_complex(contents, interfaces)
+        # Define $contents as a global variable within this class so it can be returned
+        self.contents = contents
+
+    def __call__(self):
+        # Return $contents
+        return(self.contents)
+
+    def default_interface(self, contents, interfaces):
+        # Define the list that will hold the new $contents entries
+        new_contents = []
+        # Iterate through each line in the $contents list
+        for line in contents:
+            # Define $curr as the current line minus any extraneous whitespace
+            curr = line.strip()
+            # If $curr starts with one of the interfaces within the $interfaces set, then replace the default interface with the custom Hard Hat OS one
+            new_line = [line.replace(interface, f"hos_{interface}") for interface in interfaces if curr.startswith(f"{interface}(")]
+            # Check if the $replacement list is non-empty
+            if new_line:
+                # If so, then add the contents of $new_line to the $new_contents output list
+                new_contents = new_contents + new_line 
+            else:
+                # Otherwise add the $line as-is
+                new_contents.append(line)
+        # Return the $new_contents list
+        return(new_contents)
+    
+    def permissions_simple(self, contents, interfaces):
+        # For every line in $contents that has applicable HOS permissions, define a tuple that contains the index of the line within $contnets and the corresponding $interface
+        all_replacements = [(i, interface) for i in range(len(contents)) for interface in interfaces if contents[i].strip().endswith(f"{interface};")]
+        # Iterate through each tuple within $all_replacements
+        for tple in all_replacements:
+            # The index of the line within $contents
+            index = tple[0]
+            # The name of the perm interface that will be used
+            interface = tple[1]
+            # Define the original line within $contents to replace
+            line = contents[index]
+            # If the current $line does not start with 'allow' then continue to the next $tple. We only need to replace lines that will be actively used, nothing else
+            if not line.strip().startswith('allow'): continue
+            # Define the whitespace at the beginning of $line
+            whitespace = leading_whitespace(line)
+            # First split the $line via spaces and keep every entry except the first, which is the 'allow' string, and the last, which is the name of the permission that's already defined by $interface. Next, split each of these entries by the semicolon delimiter and define a list where all of the entries aren't nested
+            line = [entry_s for entry_l in line.split()[1:-1] for entry_s in entry_l.split(':')]
+            # Replace the $line within $contents by adding back the $whitespace and replacing the line with the Hard Hat OS interface for the current permission. We skup 
+            contents[index] = f"{whitespace}hos_{interface}({', '.join(line)})\n"
+        # Return $contents
+        return(contents)
+
+    def permissions_complex(self, contents, interfaces):
+        # Define the output list of new $contents
+        new_contents = []
+        # Iterate through each line within $contents
+        for line in contents:
+            # Check if the current $line is not an 'allow' rule
+            if not line.strip().startswith('allow'):
+                # If so, then add the $line to the $new_contents list
+                new_contents.append(line)
+                # Continue to the next $line since there's nothing left to do
+                continue
+            # Define the whitespace at the beginning of $line
+            whitespace = leading_whitespace(line)
+            # Find all $interfaces that are located in the current $line within curly braces
+            matches = [interface for interface in interfaces if search(r"\{.*%s.*\}" % (interface), line)]
+            # Check if there are $matches, which is a list of each $interface found in the current line
+            if matches:
+                # If so, then iterate through each interface within $matches
+                for inf in matches:
+                    # For the current $line, remove the current $inf from between the curl braces and then join the line back together
+                    current_line = ' '.join([entry.strip() for entry in line.split(inf)])
+                    # Check if the curly braces are now empty
+                    if search('\{ \}', current_line):
+                        # If so, then set the $current_line to an empty string
+                        current_line = ''
+                    else:
+                        # Otherwise, add the $whitespace to the $current_line to reconstruct it fully
+                        current_line =  f"{whitespace}{current_line}\n"
+                    # Break the $line into parts but ignore everything starting from the right curly brace
+                    line_s = [entry_s_s.strip() for entry_l in line.split('{')[0:-1] for entry_s in entry_l.split(':') for entry_s_s in entry_s.split()]
+                    # Reconstruct a completely new $line by adding the $whitespace and using the Hard Hat OS interface for the parts of the $line_s list, ignoring the first index which is just 'allow'
+                    new_line = f"{whitespace}hos_{inf}({', '.join(line_s[1:])})\n"
+                    # Add both the reconstructed $current_line and the $new_line to the output list
+                    new_contents.append(f"{current_line}{whitespace}{new_line}")
+            else:
+                # If there were no $matches then add the $line as-is to $new_contents
+                new_contents.append(line)
+        # Return $new_contents
+        return(new_contents)
+ 
 def write_contents(outfile, new_contents):
     # Open the $outfile and write the $new_contents to it
     with open(outfile, 'w') as f: [f.write(line) for line in new_contents]
@@ -122,7 +208,7 @@ def main(hos_if, te, outfile):
     # Obtain a set of all interface names defined within the $hos_if file
     interfaces = hos_interfaces(hos_if)
     # Replace all of the default interfaces within $te with their Hard Hat OS replacements whenever possible 
-    new_contents = replace_defaults(te, interfaces)
+    new_contents = replacement(te, interfaces)()
     # Check if an $outfile has been specified
     if outfile:
         # If so, then write the $new_contents to the $outfile
