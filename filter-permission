@@ -48,11 +48,11 @@ filter() {
             # Remove the $search_permission from the current $result
             result_new="$(replace "${result}" "${search_permission}")";
             # If the new $result ends with a space or empty curl braces, then comment out the $result
-            [[ $(echo "${result_new}" | grep -E '( $|\{.*\};$)') ]] && result_new="#${result}";
+            [[ $(echo "${result_new}" | grep -E '( $|\{(| +)\};$)') ]] && result_new="#${result}";
             # Display the existing and new $result lines
             echo -e "OLD: ${result}\nNEW: ${result_new}\n";
             # Apply the new $result to the $filename
-            #sed -i s/"${result}"/"${result_new}"/g ${filename};
+            sed -i s/"${result}"/"${result_new}"/g ${filename};
         done;
     done;
 };
