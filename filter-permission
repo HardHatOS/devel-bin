@@ -12,27 +12,27 @@ root="${1}";
 # Ensure $root is a valid directory, and if not, then display an error message to user and exit with an error
 [[ ! -d "${root}" ]] && echo "ERROR: The specified selinux-policy directory is not valid: ${root}" && exit 1;
 
-# Argument 2: Search query
-query="${2}";
+# Argument 2: Search permission
+permission="${2}";
 
-# If the $query is empty then display an error message to stdout and exit with an error
-[[ -z "${query}" ]] && echo "ERROR: Argument 2: Permission to search for was not specified!" && exit 1;
+# If the $permission is empty then display an error message to stdout and exit with an error
+[[ -z "${permission}" ]] && echo "ERROR: Argument 2: Permission to search for was not specified!" && exit 1;
 
 #################
 ### FUNCTIONS ###
 #################
 replace() {
-    # Echo the specified string ($1) and remove the search query ($2) from it
+    # Echo the specified string ($1) and remove the search permission ($2) from it
     echo -e "${1}" | sed s/"${2}"//g;
 };
 
 filter() {
-    # Define the search query
-    search_query="${2}";
+    # Define the search permission
+    search_permission="${2}";
     # Iterate through each filename that ends with the specified extension ($1)
     for filename in $(find "${root}" -name "*.${1}"); do
-        # For the current $filename, check if it contains the $search_query and if the results contain the string 'allow ' to avoid modifying deny or dontaudit lines
-        results=$(grep "${search_query}" "${filename}" | grep 'allow ');
+        # For the current $filename, check if it contains the $search_permission and if the results contain the string 'allow ' to avoid modifying deny or dontaudit lines
+        results=$(grep "${search_permission}" "${filename}" | grep 'allow ');
         # If there are no $results, then continue to the next $filename
         [[ -z "${results}" ]] && continue;
         # If the beginning of the line starts with a hash, then the line is already commented out so skip it
@@ -45,10 +45,10 @@ filter() {
         IFS=',' read -a array <<< "${results}"
         # Iterate through each found result within the $array
         for result in "${array[@]}"; do
-            # Remove the $search_query from the current $result
-            result_new="$(replace "${result}" "${search_query}")";
+            # Remove the $search_permission from the current $result
+            result_new="$(replace "${result}" "${search_permission}")";
             # If the new $result ends with a space or empty curl braces, then comment out the $result
-            [[ $(echo "${result_new}" | grep -E '( $|\{.*\}$)') ]] && result_new="#${result}";
+            [[ $(echo "${result_new}" | grep -E '( $|\{.*\};$)') ]] && result_new="#${result}";
             # Display the existing and new $result lines
             echo -e "OLD: ${result}\nNEW: ${result_new}\n";
             # Apply the new $result to the $filename
@@ -60,8 +60,10 @@ filter() {
 #############
 ### START ###
 #############
-# 
-filter "if" "${query} ";
-filter "if" "${query};";
-filter "te" "${query} ";
-filter "te" "${query};";
+# Filter the specified permission from the SELinux interface (.if) and policy (.te) files. Here, the $permission ends with a space to capture lines such as: 'allow this:is { example_perm_one example_perm_two $permission };'
+filter "if" "${permission} ";
+filter "te" "${permission} ";
+
+# Filter the specified permission from the SELinux interface (.if) and policy (.te) files. Here, the $permssion ends with a semicolon to capture lines such as: 'allow this:is $permission;'
+filter "if" "${permission};";
+filter "te" "${permission};";
