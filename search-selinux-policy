@@ -103,6 +103,8 @@ def grep(query, interfaces):
 def show(filename, line):
     # Open $filename and obtain its full contents
     with open(filename, 'r') as f: contents = f.readlines()
+    # Display the $filename to stdout
+    print(f"Filename: {filename}")
     # Define the $contents as starting with the $line
     contents = contents[line:]
     # If the user's query is a definition AND the definition does _not_ end with a tick, then only show the definition line
