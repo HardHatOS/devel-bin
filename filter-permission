@@ -52,7 +52,7 @@ filter() {
             # Display the existing and new $result lines
             echo -e "OLD: ${result}\nNEW: ${result_new}\n";
             # Apply the new $result to the $filename
-            sed -i s/"${result}"/"${result_new}"/g ${filename};
+            sed -i s/"${result}"/"${result_new}"/g "${filename}";
         done;
     done;
 };
