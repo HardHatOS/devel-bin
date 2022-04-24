@@ -1,0 +1,67 @@
+#!/usr/bin/env bash
+
+#################
+### ARGUMENTS ###
+#################
+# Argument 1: Root directory to search for SELinux files in
+root="${1}";
+
+# If the $root directory is empty then display an error message to stdout and exit with an error
+[[ -z "${root}" ]] && echo "ERROR: Argument 1: selinux-policy directory was not specified!" && exit 1;
+
+# Ensure $root is a valid directory, and if not, then display an error message to user and exit with an error
+[[ ! -d "${root}" ]] && echo "ERROR: The specified selinux-policy directory is not valid: ${root}" && exit 1;
+
+# Argument 2: Search query
+query="${2}";
+
+# If the $query is empty then display an error message to stdout and exit with an error
+[[ -z "${query}" ]] && echo "ERROR: Argument 2: Permission to search for was not specified!" && exit 1;
+
+#################
+### FUNCTIONS ###
+#################
+replace() {
+    # Echo the specified string ($1) and remove the search query ($2) from it
+    echo -e "${1}" | sed s/"${2}"//g;
+};
+
+filter() {
+    # Define the search query
+    search_query="${2}";
+    # Iterate through each filename that ends with the specified extension ($1)
+    for filename in $(find "${root}" -name "*.${1}"); do
+        # For the current $filename, check if it contains the $search_query and if the results contain the string 'allow ' to avoid modifying deny or dontaudit lines
+        results=$(grep "${search_query}" "${filename}" | grep 'allow ');
+        # If there are no $results, then continue to the next $filename
+        [[ -z "${results}" ]] && continue;
+        # If the beginning of the line starts with a hash, then the line is already commented out so skip it
+        [[ ! -z $(echo "${results}" | tr -d "[[:space:]]" | grep -E '^#') ]] && continue;
+        # Display the current $filename to stdout
+        echo "FILENAME: ${filename}";
+        # Replace all newlines with commas using `tr`, and then use `sed` to remove the comma at the very end of the line (if applicable)
+        results=$(echo "${results}" | tr '\n' ',' | sed "s/,$//");
+        # Convert $results from a string into an array, using the comma delimiter to separate the different lines
+        IFS=',' read -a array <<< "${results}"
+        # Iterate through each found result within the $array
+        for result in "${array[@]}"; do
+            # Remove the $search_query from the current $result
+            result_new="$(replace "${result}" "${search_query}")";
+            # If the new $result ends with a space or empty curl braces, then comment out the $result
+            [[ $(echo "${result_new}" | grep -E '( $|\{.*\}$)') ]] && result_new="#${result}";
+            # Display the existing and new $result lines
+            echo -e "OLD: ${result}\nNEW: ${result_new}\n";
+            # Apply the new $result to the $filename
+            #sed -i s/"${result}"/"${result_new}"/g ${filename};
+        done;
+    done;
+};
+
+#############
+### START ###
+#############
+# 
+filter "if" "${query} ";
+filter "if" "${query};";
+filter "te" "${query} ";
+filter "te" "${query};";
