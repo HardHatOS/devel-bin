@@ -57,7 +57,7 @@ is_file "${makefile}";
 ### START ###
 #############
 # Compile the SELinux policy file
-"${make}" -f "${makefile}" "${pp}";
+"${make}" -f "${makefile}" "${pp}" || exit 1;
 
 ############
 ### POST ###
