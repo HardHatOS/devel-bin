@@ -1,0 +1,72 @@
+#!/usr/bin/env bash
+
+#################
+### ARGUMENTS ###
+#################
+# Argument 1: SELinux policy file
+te="${1}";
+
+# If argument 1 was not specified, then display an error message to stdout and exit 1
+[[ -z "${te}" ]] && echo "ERROR: Argument 1: Specify the SELinux policy file (<name>.te) to compile" && exit 1;
+
+# [OPTIONAL] Argument 2: Install the compiled SELinux policy; this option is enabled by passing the '-i' flag
+install_policy="$(echo ${@} | grep -F -- '-i')";
+
+######################
+### BINARIES/FILES ###
+######################
+# `make` binary
+make='make';
+
+# SELinux development makefile for compiling policies
+makefile='/usr/share/selinux/devel/Makefile';
+
+# `semodule` binary
+semodule='semodule';
+
+#################
+### FUNCTIONS ###
+#################
+is_file() {
+    # If the specified file does not exist, then display an error to stdout and exit 1
+    [[ ! -f "${1}" ]] && echo "ERROR: Unable to locate the following file: ${1}" && exit 1;
+};
+
+
+is_exec() {
+    # If the specified command ($1) was not found on the system, display an error to stdout and exit 1
+    [[ -z $(command -v "${1}") ]] && echo "ERROR: Unable to execute the following command: ${1}" && exit 1;
+};
+
+###########
+### PRE ###
+###########
+# Ensure the $te SELinux policy file exists
+is_file "${te}";
+
+# Define the output '.pp' compiled SELinux policy module
+pp="${te%.te}.pp";
+
+# Ensure the 'make' binary exists
+is_exec "${make}";
+
+# Ensure the SELinux Makefile exists
+is_file "${makefile}";
+
+#############
+### START ###
+#############
+# Compile the SELinux policy file
+"${make}" -f "${makefile}" "${pp}";
+
+############
+### POST ###
+############
+# If the '-i' flag was NOT passed, meaning the compiled module should not be installed, then exit without error here
+[[ -z "${install_policy}" ]] && exit 0;
+
+# Ensure the 'semodule' binary exists
+is_exec "${semodule}";
+
+# Install the compiled module
+"${semodule}" -i "${pp}";
